@@ -1,4 +1,4 @@
-systemReadMe.txt - Final Project, DCS Course, Light source & object proximity detector system
+Final Project, DCS Course, Light source & object proximity detector system
 ==============================================================================
 Hardware
 ==============================================================================
@@ -213,3 +213,4 @@ UART protocol — quick reference
 Authors:
 Arkady Gerasimuk
 Adi Shlomo
+
