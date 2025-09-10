@@ -1,215 +1,280 @@
-systemReadMe.txt - Final Project, DCS Course, Light source & object proximity detector system
-==============================================================================
-Hardware
-==============================================================================
-Layering: BSP → HAL → API/APP → main  (FSM, interrupt-driven)
-I/O: UART 9600 bps 
-Display: LCD 16×2
-Sensors: HC-SR04 + two LDRs  
-Motor: SG90 servo
-==============================================================================
-Pin out
-==============================================================================
-P1.0 - Analog input signal (channel A0) - LDR1
-P1.1 - UART
-P1.2 - UART
-P1.3 - Analog input signal (channel A3) - LDR2
-P1.4 - LCD Data D4
-P1.5 - LCD Data D5
-P1.6 - LCD Data D6
-P1.7 - LCD Data D7
-P2.0 - PB0 (for calibrating the LDR's)
-P2.1 - LCD control signal E
-P2.2 - Ultrasonic sensor output signal (ECHO) - Timer A1 CCR1
-P2.3 - LCD control signal RS
-P2.4 - Timer A1 CCR2 - PWM out (for servo motor)
-P2.5 - LCD control signal RW
-P2.6 - Ultrasonic sensor input signal  (Trig) - Timer A0 CCR1
-P2.7 - PB1
-==============================================================================
-Source index
-==============================================================================
-MCU (C):
-• headers: app.h, api.h, halGPIO.h, bsp_msp430x2xx.h
-• sources: bsp.c, halGPIO.c, api.c, main.c
+# Light Source & Object Proximity Detector System
+**Final Project - DCS Course**
 
-PC (Python):
-• main.py
-==============================================================================
-[MCU / Headers]
-==============================================================================
-1) app.h
-   • Constants & memory map: FILE_METADATA_ADDR, FILE_CONTENT_START_ADDR/END_ADDR,
-     LDR1_CALIB_START_ADDR, LDR2_CALIB_START_ADDR, CHUNK_SIZE, FILE_ENTRY_SIZE, MAX_FILES, …
-   • Enums: top-level FSM states and sub-FSMs (Objects / Telemeter / Lights / Files),
-     ScanMode, FileType, UploadState, ViewLcdState.
-   • Types: FileEntry (name, type, size, start address).
-   • extern: shared state for filesystem counters, upload buffers/indices, FSM flags.
+## 👥 Authors
+- Arkady Gerasimuk
+- Adi Shlomo
 
-2) api.h
-   • APP/API prototypes: object_detector, telemeter, light_detector, light_object_detector,
-     servo_scan, measure_distance_averaged,
-     measure_single_ldr, inc_lcd / dec_lcd / rra_lcd / clear_lcd,
-     set_delay, mcu_sleep, FileSystem_Init, Handle_UploadFile_Start, Handle_Upload_Byte,
-     Handle_ListFiles_Command, Display_File_List / Display_File_Content,
-     run_calibration_sequence, write_all_calib_to_flash, send_calib_arr,
-     parse_and_execute_line, get_next_line_from_flash.
+## 📋 Project Overview
+An embedded system for detecting light sources and measuring object proximity using MSP430G2553 microcontroller with multiple sensors and actuators.
 
-3) halGPIO.h
-   • HAL prototypes for LCD / UART / ADC / Timers / PWM / Ultrasonic / Flash, circular RX buffer
-     (UartBuffer_*), pin macros and ISR vector macros, LPM helpers.
+## 🔧 Hardware Components
 
-4) bsp_msp430x2xx.h
-   • BSP for MSP430G2553: pin mapping, general macros, Timer/ADC/UART defines, ISR vectors.
+### Main Components
+- **Microcontroller**: MSP430G2553
+- **Display**: LCD 16×2
+- **Sensors**: 
+  - HC-SR04 Ultrasonic sensor
+  - 2× LDR (Light Dependent Resistors)
+- **Motor**: SG90 Servo
+- **Communication**: UART @ 9600 bps
 
-==============================================================================
-[MCU / C Sources] — Purpose + per-function summary
-==============================================================================
+### System Architecture
+```
+BSP → HAL → API/APP → Main (FSM, interrupt-driven)
+```
 
-A) bsp.c — Board Support Package
-   Purpose: low-level board bring-up (GPIO/Timers/ADC/UART/LCD) and system helpers.
-   Functions:
-   - GPIOconfig — Configure pins for LCD, Servo/PWM, Ultrasonic TRIG/ECHO, UART, buttons.
-   - Timers_Init — Set up TimerA0/TimerA1 for PWM/Delay/Capture per macros.
-   - ADC_config — Initialize ADC10 with default settings.
-   - UART_init — Configure UART (9600 bps) and enable RX interrupt.
-   - enterLPM / enable_interrupts / disable_interrupts — LPM and global IRQ utilities.
+## 📌 Pin Configuration
 
-B) halGPIO.c — HAL (device drivers + ISRs)
-   Purpose: direct hardware layer—LCD, Flash, Timers, PWM/Servo, Ultrasonic, ADC, UART, Buttons,
-            plus the circular RX buffer and all relevant ISRs.
-   Functions:
+| Pin  | Function | Description |
+|------|----------|-------------|
+| **P1.0** | Analog Input (A0) | LDR1 |
+| **P1.1** | UART | Communication |
+| **P1.2** | UART | Communication |
+| **P1.3** | Analog Input (A3) | LDR2 |
+| **P1.4** | LCD Data D4 | Display data |
+| **P1.5** | LCD Data D5 | Display data |
+| **P1.6** | LCD Data D6 | Display data |
+| **P1.7** | LCD Data D7 | Display data |
+| **P2.0** | PB0 | LDR calibration button |
+| **P2.1** | LCD Control E | Enable signal |
+| **P2.2** | Ultrasonic ECHO | Timer A1 CCR1 |
+| **P2.3** | LCD Control RS | Register select |
+| **P2.4** | PWM Output | Timer A1 CCR2 - Servo motor |
+| **P2.5** | LCD Control RW | Read/Write |
+| **P2.6** | Ultrasonic TRIG | Timer A0 CCR1 |
+| **P2.7** | PB1 | Button input |
 
-   LCD:
-   - lcd_init — Initialize LCD in 4-bit mode.
-   - lcd_cmd — Send LCD command nibble(s).
-   - lcd_data — Send LCD data/character.
-   - lcd_puts — Print a C-string to the LCD.
-   - lcd_clear / lcd_strobe — Clear display / EN strobe pulse.
+## 📁 Source Code Structure
 
-   UART + RX buffer:
-   - UART_send_char / UART_send_string_blocking — Transmit a byte / string (polling).
-   - UartBuffer_Init / UartBuffer_Put / UartBuffer_Get — Circular RX buffer (filled by RX ISR).
+### MCU Code (C)
 
-   Timers / delays / ultrasonic:
-   - Timer_Start_General_Delay_ms / _sec / Timer_Stop_Delay_ms — Blocking delays with LPM.
-   - Timer_Start_Script_Delay_ms — Script-driven delay tick.
-   - Ultrasonic_Start_Measurement — Fire TRIG and arm ECHO capture.
-   - Ultrasonic_Stop_Measurement — Stop capture, clear flags.
-   - Timer_Start_Ultrasonic_Timeout — Safety timeout for a measurement.
+#### Headers
+- **`app.h`** - Application layer definitions
+  - Memory map constants and addresses
+  - FSM state enumerations
+  - File system structures
+  - Shared state declarations
 
-   PWM / Servo:
-   - pwmOutServoConfig — Compute CCR/Ton for a requested angle.
-   - Set_Angle_PWM — Map angle to PWM pulse width.
-   - stopServoPwm — Disable PWM output to the servo.
+- **`api.h`** - API function prototypes
+  - Sensor control functions
+  - Display management
+  - File system operations
+  - Calibration routines
 
-   ADC (LDR):
-   - ADC_Enable / ADC_Disable — Power the ADC on/off.
-   - ADC_sample — Blocking single-shot ADC read.
-   - ADC_Configure_LDR1 / ADC_Configure_LDR2 — Select channel and config per LDR.
+- **`halGPIO.h`** - Hardware abstraction layer
+  - GPIO operations
+  - UART circular buffer
+  - Timer/PWM control
+  - Flash memory access
 
-   Flash:
-   - FlashConfig / Flash_SetTiming — Flash timing vs. clock.
-   - Flash_EraseSegment — Erase a Flash segment.
-   - Flash_WriteByte / Flash_WriteBlock / Flash_WriteData_NoErase — Program data (content/meta).
-   - write_flash_char / init_flash_write / disable_flash_write / Flash_StartWrite / Flash_Close — write helpers.
+- **`bsp_msp430x2xx.h`** - Board support package
+  - MSP430-specific definitions
+  - Register mappings
+  - Interrupt vectors
 
-   ISRs:
-   - PBs_handler — Button ISR (debounce, set button flag).
-   - Timer_1_ISR — Timer1 capture ISR for ECHO (HC-SR04) + exit LPM.
-   - Timer0_A0_ISR_Handler — Timer0 CCR0 ISR for delays/script tick.
-   - ADC_ISR — End-of-conversion ISR.
+#### Source Files
 
-C) api.c — APP/API (FSM logic, filesystem, calibration)
-   Purpose: high-level logic, runtime FSMs, Flash filesystem & scripts, LDR calibration, scanning.
-   Functions:
+##### `bsp.c` - Board Support Package
+Low-level hardware initialization and configuration
+- `GPIOconfig()` - Configure all GPIO pins
+- `Timers_Init()` - Setup TimerA0/A1 for PWM/delays
+- `ADC_config()` - Initialize ADC10
+- `UART_init()` - Configure UART @ 9600 bps
+- `enterLPM()` - Low power mode control
 
-   Scans & sensing:
-   - servo_scan(start, end, mode, return_to_center)
-     Perform a 0°–180° sweep in 1° steps; per step, measure and transmit according to ScanMode.
-     Send FF FF FF terminator at the end; optionally return to 90°.
-   - object_detector — Objects FSM: move servo, measure HC-SR04, send (2B distance + 1B angle).
-   - telemeter — Telemeter FSM: after ‘T’, wait for angle byte, move, take one measurement,
-     send (2B distance + 1B angle).
-   - light_detector — Light FSM: scan and send (LDR1, LDR2, angle) per step.
-   - light_object_detector — Combined FSM: send (distance, LDR1, LDR2, angle) per step.
-   - measure_single_ldr — Read a single LDR via ADC.
+##### `halGPIO.c` - Hardware Abstraction Layer
+Device drivers and interrupt service routines
 
-   LDR calibration:
-   - run_calibration_sequence — Collect 20 samples (10 per LDR) guided by LCD/buttons,
-     stream live to PC, then compress for storage.
-   - write_all_calib_to_flash — Store two 10-point arrays (compressed >>3) into two segments.
-   - send_calib_arr — Read back and send 20 bytes from Flash to the PC.
+**LCD Functions:**
+- `lcd_init()` - Initialize in 4-bit mode
+- `lcd_cmd()` - Send commands
+- `lcd_data()` - Send data
+- `lcd_puts()` - Display strings
 
-   Filesystem / scripts + LCD:
-   - FileSystem_Init — Initialize Flash areas (metadata/content) and internal indices.
-   - Handle_UploadFile_Start — On ‘U’: check space and arm upload → reply ‘A’ (ready for metadata).
-   - Handle_Upload_Byte — Receive metadata (name/type/size + checksum) → reply ‘B’ (ready for data).
-     Then receive file content in 64-byte chunks with checksum; reply ‘K’ per chunk and ‘S’ on final.
-     Update metadata and file count.
-   - Handle_ListFiles_Command — On ‘L’: send file names (one per line), end with EOT=0x04.
-   - Display_File_List / Display_File_Content — Browse names/content on LCD using PB0/PB1.
-   - parse_and_execute_line — Script line interpreter (inc_lcd / dec_lcd / rra_lcd / set_delay /
-     servo_deg / servo_scan / clear_lcd / sleep, …) and executor.
-   - get_next_line_from_flash — Fetch next line from Flash content.
-   - mcu_sleep — Enter LPM for waits/delays.
+**UART & Buffer:**
+- `UART_send_char/string()` - Transmit functions
+- `UartBuffer_*()` - Circular RX buffer management
 
-D) main.c — Entry point and command loop
-   Purpose: initialize layers, run RX loop, decode UART commands and dispatch FSMs.
-   Functions:
-   - main — Bring-up BSP/HAL/API/APP; main RX/command loop; state transitions.
-   - process_command — Decode commands:
-     ‘P’→‘A’ (handshake), ‘L’ (list), ‘U’ (start upload), ‘R’ (run script by name),
-     ‘V’ (LCD view mode), ‘D’ (delete / re-init FS), ‘S’ (objects scan),
-     ‘K’ (lights scan), ‘X’ (combined scan), ‘J’ (calibration), ‘Z’ (send calibration),
-     ‘T’+ angle (interactive telemeter).
+**Timers & Measurements:**
+- `Timer_Start_*_Delay()` - Blocking delays
+- `Ultrasonic_*_Measurement()` - HC-SR04 control
+- `Set_Angle_PWM()` - Servo positioning
 
-==============================================================================
-[PC / Python] — main.py (GUI + protocol + processing)
-==============================================================================
-Purpose: PySimpleGUI desktop app to control all modes, run calibration, manage files,
-process data and plot polar maps.
+**ADC Operations:**
+- `ADC_sample()` - Single-shot reading
+- `ADC_Configure_LDR1/2()` - Channel selection
 
-Key functions:
-- init_uart / send_command / receive_data / send_data — Open port; I/O helpers.
-- calculate_checksum — 8-bit checksum (mod-256) for metadata and 64-byte chunks.
-- objects_detector — Send ‘S’; read (dist_lo, dist_hi, angle); segment objects and plot polar map.
-- telemeter — Send ‘T’, then angle byte; display live single-point measurements.
-- lights_detector — Send ‘K’; read (LDR1, LDR2, angle); smooth, find peaks/valleys; estimate distance.
-- light_objects_detector — Combined processing and plotting for lights + objects.
-- process_light_scan_data / find_beam_center — smoothing, valley splitting, “wide-blob” merge,
-  beam-center estimation.
-- expand_calibration_array / get_distance_from_voltage — build continuous calibration map(s),
-  convert LDR reading to distance.
-- draw_scanner_map / draw_scanner_map_lights / draw_combined_map — polar plotting.
-- refresh_file_list — ‘L’: receive names until EOT (0x04).
-- upload_file_to_mcu — Full upload protocol:
-  1) send ‘U’, wait for ‘A’ (ready for metadata),
-  2) send metadata + checksum, wait for ‘B’ (ready for data),
-  3) send file in 64-byte chunks (each with checksum); receive ‘K’ per chunk and ‘S’ on final.
-- determine_file_type / validate_script_syntax — TEXT vs. SCRIPT detection and basic checks.
-- file_mode — GUI for list / view / upload / delete / run / calibrate.
-- main — App main loop and mode switching.
+**Flash Memory:**
+- `Flash_EraseSegment()` - Erase operations
+- `Flash_Write*()` - Program data
+- Flash helper functions
 
-Table of opcodes:
-inc_lcd=0x01, dec_lcd=0x02, rra_lcd=0x03, set_delay=0x04, clear_lcd=0x05, servo_deg=0x06, servo_scan=0x07, sleep=0x08
-==============================================================================
-UART protocol — quick reference
-==============================================================================
-• Control Markers: Start-of-Script = 0xCC, Telemetry Header = 0xFE, End/Sleep = 0x7F, End-of-Scan = FF FF FF
-• Handshake: ‘P’ → MCU replies ‘A’.
-• Objects:  ‘S’ → stream of (2B distance + 1B angle) per step; end marker FF FF FF.
-• Lights:   ‘K’ → stream of (LDR1_lo, LDR1_hi, LDR2_lo, LDR2_hi, angle).
-• Combined: ‘X’ → stream of (2B distance, 2B LDR1, 2B LDR2, 1B angle); end FF FF FF.
-• Telemeter: ‘T’ then angle byte → MCU returns (2B distance + 1B angle);
-• Files:
-  - ‘L’ — list files, one name per line; end with EOT=0x04.
-  - ‘U’ — upload: ‘A’ (ready for metadata) → send metadata+checksum → ‘B’ (ready for data)
-           → send 64-byte chunks with checksum; MCU replies ‘K’ (chunk OK) and ‘S’ (final).
-  - ‘R’ + name — run script from Flash.   - ‘V’ — LCD list/view mode.   - ‘D’ — delete (re-init FS).
-• Calibration: ‘J’ — guided LDR capture (20 samples); ‘Z’ — read back compressed 20-byte array.
-• Endianness - Little-Endian, first Low-Byte, second High-byte.
+##### `api.c` - Application Layer
+High-level logic and FSM implementations
 
-Authors:
-Arkady Gerasimuk
-Adi Shlomo
+**Scanning Modes:**
+- `servo_scan()` - 0°-180° sweep with measurements
+- `object_detector()` - Object detection FSM
+- `telemeter()` - Single-point measurement
+- `light_detector()` - Light scanning FSM
+- `light_object_detector()` - Combined mode
+
+**Calibration:**
+- `run_calibration_sequence()` - 20-sample collection
+- `write_all_calib_to_flash()` - Store calibration data
+- `send_calib_arr()` - Transmit calibration to PC
+
+**File System:**
+- `FileSystem_Init()` - Initialize Flash areas
+- `Handle_Upload*()` - File upload protocol
+- `Handle_ListFiles_Command()` - Directory listing
+- `Display_File_*()` - LCD file browser
+
+**Script Engine:**
+- `parse_and_execute_line()` - Script interpreter
+- `get_next_line_from_flash()` - Script reader
+
+##### `main.c` - Main Program
+Entry point and command dispatcher
+- `main()` - System initialization and main loop
+- `process_command()` - UART command decoder
+
+### PC Software (Python)
+
+#### `main.py` - GUI Application
+PySimpleGUI desktop application for system control
+
+**Core Functions:**
+- **Communication**: `init_uart()`, `send/receive_data()`
+- **Scanning**: `objects_detector()`, `lights_detector()`, `telemeter()`
+- **Data Processing**: `process_light_scan_data()`, `find_beam_center()`
+- **Visualization**: `draw_scanner_map*()` - Polar plotting
+- **File Management**: `upload_file_to_mcu()`, `refresh_file_list()`
+- **Calibration**: `expand_calibration_array()`, `get_distance_from_voltage()`
+
+## 🔌 UART Protocol Reference
+
+### Command Set
+
+| Command | Description | Response |
+|---------|-------------|----------|
+| **`P`** | Handshake | `A` (ACK) |
+| **`S`** | Start object scan | Stream: (2B distance + 1B angle), ends with `FF FF FF` |
+| **`K`** | Start light scan | Stream: (2B LDR1 + 2B LDR2 + 1B angle) |
+| **`X`** | Combined scan | Stream: (2B dist + 2B LDR1 + 2B LDR2 + 1B angle) |
+| **`T`** + angle | Telemeter mode | Single measurement: (2B distance + 1B angle) |
+| **`L`** | List files | File names, one per line, ends with `0x04` (EOT) |
+| **`U`** | Upload file | See upload protocol below |
+| **`R`** + name | Run script | Executes script from Flash |
+| **`V`** | LCD view mode | Enter file browser on LCD |
+| **`D`** | Delete all files | Re-initialize file system |
+| **`J`** | Calibration mode | Guided LDR calibration sequence |
+| **`Z`** | Get calibration | Returns 20-byte calibration array |
+
+### File Upload Protocol
+1. Send `U` → Receive `A` (ready for metadata)
+2. Send metadata + checksum → Receive `B` (ready for data)
+3. Send file in 64-byte chunks with checksum
+   - MCU replies `K` for each chunk
+   - MCU replies `S` on final chunk
+
+### Control Markers
+- **`0xCC`** - Start of script
+- **`0xFE`** - Telemetry header
+- **`0x7F`** - End/Sleep marker
+- **`FF FF FF`** - End of scan marker
+- **`0x04`** - End of transmission (EOT)
+
+### Script Opcodes
+
+| Opcode | Command | Description |
+|--------|---------|-------------|
+| `0x01` | `inc_lcd` | Increment LCD value |
+| `0x02` | `dec_lcd` | Decrement LCD value |
+| `0x03` | `rra_lcd` | Rotate LCD display |
+| `0x04` | `set_delay` | Set delay time |
+| `0x05` | `clear_lcd` | Clear LCD display |
+| `0x06` | `servo_deg` | Set servo angle |
+| `0x07` | `servo_scan` | Start servo scan |
+| `0x08` | `sleep` | Enter sleep mode |
+
+## 📊 Data Format
+- **Endianness**: Little-Endian (Low byte first, High byte second)
+- **Distance**: 16-bit value (2 bytes)
+- **LDR Values**: 16-bit values (2 bytes each)
+- **Angles**: 8-bit value (0-180 degrees)
+- **Checksum**: 8-bit modulo-256 sum
+
+## 🎯 Operating Modes
+
+### 1. Object Detection Mode
+- Performs 180° sweep with ultrasonic sensor
+- Measures distance at each degree
+- Generates polar map of surroundings
+
+### 2. Light Detection Mode
+- Scans with dual LDRs
+- Identifies light source positions
+- Estimates distance based on intensity
+
+### 3. Combined Mode
+- Simultaneous object and light detection
+- Comprehensive environmental mapping
+
+### 4. Telemeter Mode
+- Interactive single-point measurements
+- User-specified angles
+- Real-time distance feedback
+
+### 5. File Management
+- Upload scripts and text files
+- Browse files on LCD
+- Execute stored scripts
+
+### 6. Calibration Mode
+- Guided LDR calibration sequence
+- Stores calibration curves in Flash
+- Improves distance estimation accuracy
+
+## 💾 Memory Organization
+
+### Flash Memory Map
+- **Metadata Area**: File entries (name, type, size, address)
+- **Content Area**: Actual file data
+- **Calibration Data**: LDR calibration arrays (2 segments)
+- **Maximum Files**: System-defined limit
+
+### File Entry Structure
+```c
+typedef struct {
+    char name[12];      // File name
+    uint8_t type;       // TEXT or SCRIPT
+    uint16_t size;      // File size in bytes
+    uint16_t startAddr; // Start address in Flash
+} FileEntry;
+```
+
+## 🚀 Getting Started
+
+### Hardware Setup
+1. Connect MSP430G2553 to PC via UART
+2. Wire LCD, sensors, and servo according to pin configuration
+3. Power the system
+
+### Software Setup
+1. Flash the MCU with compiled C code
+2. Install Python dependencies for GUI
+3. Configure COM port in Python application
+
+### Basic Usage
+1. Run Python GUI application
+2. Click "Connect" to establish UART communication
+3. Select desired operating mode
+4. View results in real-time plots or LCD display
+
+## 📝 Notes
+- System uses interrupt-driven architecture for efficiency
+- Low Power Mode (LPM) utilized during idle periods
+- Circular buffer prevents UART data loss
+- Flash memory provides non-volatile storage for scripts and calibration
